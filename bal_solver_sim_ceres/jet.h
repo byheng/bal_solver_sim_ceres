@@ -44,10 +44,13 @@ struct jet
     v(index, 0) = 1.0;
   }
 };
+
 /****************jet overload******************/
 // for the camera BA,the autodiff only need overload the operator :jet+jet
 // number+jet -jet jet-number jet*jet number/jet jet/jet sqrt(jet) cos(jet)
 // sin(jet)  +=(jet) overload jet + jet
+
+// overload jet+jet
 template <int N>
 inline jet<N> operator+(const jet<N>& A, const jet<N>& B)
 {
@@ -56,57 +59,70 @@ inline jet<N> operator+(const jet<N>& A, const jet<N>& B)
 
 // overload number + jet
 template <int N>
-inline jet<N> operator+(double A, const jet<N>& B)
+inline jet<N> operator+(double a, const jet<N>& B)
 {
-  return jet<N>(A + B.a, B.v);
+  return jet<N>(a + B.a, B.v);
 }  // end number+jet
 
 // overload jet-number
 template <int N>
-inline jet<N> operator-(const jet<N>& A, double B)
+inline jet<N> operator-(const jet<N>& A, double b)
 {
-  return jet<N>(A.a - B, A.v);
+  return jet<N>(A.a - b, A.v);
 }
+
 // overload number * jet because jet *jet need A.a *B.v+B.a*A.v.So the number
 // *jet is required
+
+// overload number*jet
 template <int N>
-inline jet<N> operator*(double A, const jet<N>& B)
+inline jet<N> operator*(double a, const jet<N>& B)
 {
-  return jet<N>(A * B.a, A * B.v);
+  return jet<N>(a * B.a, a * B.v);
 }
+
+// overload jet*number
 template <int N>
-inline jet<N> operator*(const jet<N>& A, double B)
+inline jet<N> operator*(const jet<N>& A, double b)
 {
-  return jet<N>(B * A.a, B * A.v);
+  return jet<N>(b * A.a, b * A.v);
 }
+
 // overload -jet
 template <int N>
 inline jet<N> operator-(const jet<N>& A)
 {
   return jet<N>(-A.a, -A.v);
 }
+
+// overload number-jet
 template <int N>
-inline jet<N> operator-(double A, const jet<N>& B)
+inline jet<N> operator-(double a, const jet<N>& B)
 {
-  return jet<N>(A - B.a, -B.v);
+  return jet<N>(a - B.a, -B.v);
 }
+
+// overload jet-jet
 template <int N>
 inline jet<N> operator-(const jet<N>& A, const jet<N>& B)
 {
   return jet<N>(A.a - B.a, A.v - B.v);
 }
+
 // overload jet*jet
 template <int N>
 inline jet<N> operator*(const jet<N>& A, const jet<N>& B)
 {
   return jet<N>(A.a * B.a, B.a * A.v + A.a * B.v);
 }
+
 // overload number/jet
 template <int N>
-inline jet<N> operator/(double A, const jet<N>& B)
+inline jet<N> operator/(double a, const jet<N>& B)
 {
-  return jet<N>(A / B.a, -A * B.v / (B.a * B.a));
+  return jet<N>(a / B.a, -a * B.v / (B.a * B.a));
 }
+
 // overload jet/jet
 template <int N>
 inline jet<N> operator/(const jet<N>& A, const jet<N>& B)
@@ -122,6 +138,7 @@ inline jet<N> operator/(const jet<N>& A, const jet<N>& B)
   const double abyb = A.a * a_inverse;
   return jet<N>(abyb, (A.v - abyb * B.v) * a_inverse);
 }
+
 // sqrt(jet)
 template <int N>
 inline jet<N> sqrt(const jet<N>& A)
@@ -130,17 +147,22 @@ inline jet<N> sqrt(const jet<N>& A)
 
   return jet<N>(t, 1.0 / (2.0 * t) * A.v);
 }
+
 // cos(jet)
 template <int N>
 inline jet<N> cos(const jet<N>& A)
 {
   return jet<N>(std::cos(A.a), -std::sin(A.a) * A.v);
 }
+
+// sin(jet)
 template <int N>
 inline jet<N> sin(const jet<N>& A)
 {
   return jet<N>(std::sin(A.a), std::cos(A.a) * A.v);
 }
+
+// overload jet > jet
 template <int N>
 inline bool operator>(const jet<N>& f, const jet<N>& g)
 {
