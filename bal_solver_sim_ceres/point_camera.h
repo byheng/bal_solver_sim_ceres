@@ -84,15 +84,15 @@ Residual_node<T, N, N1, N2>::Residual_node(T *costfunction)
     /******************compute jacobi*************************/
 template <class T, int N, int N1, int N2>
 void Residual_node<T, N, N1, N2>::computeJacobiandResidual(
-    const Eigen::Matrix<double, N1, 1> *params_1,
-    const Eigen::Matrix<double, N2, 1> *params_2,
+    const Eigen::Matrix<double, N1, 1> *params_1, // 相机参数
+    const Eigen::Matrix<double, N2, 1> *params_2, // 点参数
     Eigen::Matrix<double, N, N1> *jacobi_parameter_1,
     Eigen::Matrix<double, N, N2> *jacobi_parameter_2,
     Eigen::Matrix<double, N, 1> *jacobi_residual) {
   // clock_t t1=clock();
   /// this problem, N=2, N1=9, N2=3;
-  jet<N1 + N2> cameraJet[N1];
-  jet<N1 + N2> pointJet[N2];
+  jet<N1 + N2> cameraJet[N1]; 
+  jet<N1 + N2> pointJet[N2]; 
   for (int i = 0; i < N1; i++) {
     cameraJet[i].init((*params_1)[i], i);
   }

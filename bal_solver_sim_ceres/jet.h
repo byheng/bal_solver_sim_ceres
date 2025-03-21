@@ -28,15 +28,14 @@ struct jet
   jet(const double& value) : a(value) { v.setZero(); }
   EIGEN_STRONG_INLINE jet(const double& value,
                           const Eigen::Matrix<double, N, 1>& v_)
-      : a(value), v(v_)
-  {
-  }
+      : a(value), v(v_)  {}
   jet(const double value, const int index)
   {
     v.setZero();
     a = value;
     v(index, 0) = 1.0;
   }
+  
   void init(const double value, const int index)
   {
     v.setZero();
