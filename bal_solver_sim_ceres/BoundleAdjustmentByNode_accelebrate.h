@@ -62,7 +62,7 @@ class Problem
   {
     Residual_block(int a, int b, // 相机参数和点参数的索引
                    BoundleAdjustment::CostFunction<N, N1, N2> *node) // 代价函数，包含观测值
-        : parameter_a(a), parameter_b(b)
+        : camera_index(a), point_index(b)
     {
       jacobi_parameter_1.setZero();
       jacobi_parameter_2.setZero();
@@ -70,8 +70,8 @@ class Problem
       residual.setZero();
       residual_node = node;
     }
-    int parameter_a;
-    int parameter_b;
+    int camera_index; // 相机参数的索引
+    int point_index; // 点参数的索引
     /*The residual_node use to make the costfunction feasible,CostFunction is a
      * virtual class and its sub class Residual_node is a template class which
      * has a class T.Then class T can be writen in main and offer the key
@@ -108,19 +108,19 @@ class Problem
     Eigen::Matrix<double, n, n> hessian_inverse; // Hessian 矩阵的逆矩阵，用于节省时间
   };
 
-  vector<Residual_block *> residual_block; // 残差块，与观测值数量相等
-  vector<Parameter<N1> *> parameter_1_vector; // 相机参数
-  vector<Parameter<N2> *> parameter_2_vector; // 点参数
-  map<double *, int> parameter_1_map;
-  map<double *, int> parameter_2_map;
+  vector<Residual_block *> residual_block_vector; // 残差块，与观测值数量相等
+  vector<Parameter<N1> *> parameter_camera_vector; // 相机参数
+  vector<Parameter<N2> *> parameter_point_vector; // 点参数
+  map<double *, int> parameter_camera_map;
+  map<double *, int> parameter_point_map;
   int parameter_a_size;
   Eigen::MatrixXd Schur_A;
   Eigen::VectorXd Schur_B;
   bool update_parameter(double *step);
-  bool checkParameter_1(double *parameter_1);
-  bool checkParameter_2(double *parameter_2);
+  bool checkParameter_camera(double *parameter_camera);
+  bool checkParameter_point(double *parameter_point);
   void addParameterBlock(
-      double *parameter_1, double *parameter_2,
+      double *parameter_camera, double *parameter_point,
       BoundleAdjustment::CostFunction<N, N1, N2> *costfunction);
   void pre_process();
   void init_scaling();
@@ -130,7 +130,7 @@ class Problem
   // array the user given.
   void post_process();
   static bool cmp(Residual_block *A, Residual_block *B);
-  vector<vector<Residual_block *>> parameter_2_link;
+  vector<vector<Residual_block *>> parameter_point_link;
   void removeParam(int param_id);  // this function will add in next version
   void out_schur_elimilate();      // this function will add in next version
   void incremental_optimal();      // this function will add in next version
@@ -144,34 +144,34 @@ template <int N, int N1, int N2>
 Problem<N, N1, N2>::~Problem()
 {
   // delete the point we create
-  for (int i = 0; i < parameter_1_vector.size(); ++i)
+  for (int i = 0; i < parameter_camera_vector.size(); ++i)
   {
-    delete (parameter_1_vector[i]);
+    delete (parameter_camera_vector[i]);
   }
-  for (int i = 0; i < parameter_2_vector.size(); ++i)
+  for (int i = 0; i < parameter_point_vector.size(); ++i)
   {
-    delete (parameter_2_vector[i]);
+    delete (parameter_point_vector[i]);
   }
-  for (int i = 0; i < residual_block.size(); ++i)
+  for (int i = 0; i < residual_block_vector.size(); ++i)
   {
-    delete (residual_block[i]);
+    delete (residual_block_vector[i]);
   }
 }
 template <int N, int N1, int N2>
 bool Problem<N, N1, N2>::cmp(Residual_block *A, Residual_block *B)
 {
-  // Order the residual_block point by the camera id
-  if (A->parameter_a < B->parameter_a) return true;
+  // Order the residual_block_vector point by the camera id
+  if (A->camera_index < B->camera_index) return true;
   return false;
 }
 template <int N, int N1, int N2>
 void Problem<N, N1, N2>::pre_process()
 {
   /* pre_process need to be done before schur_complement
-   * in the process,the numbers of parameter_a and parameter_b are known.Since
+   * in the process,the numbers of camera_index and point_index are known.Since
    * schur_complement cost much time we need to pre_process the struct of point
    * to camera. Notice that if the camera and point are not changed,the map
-   * would only construct once. use the parameter_2_link,which is a link_list as
+   * would only construct once. use the parameter_point_link,which is a link_list as
    * Point--->residual_node--->next residual_node
    *
    *                                                    |
@@ -187,9 +187,9 @@ void Problem<N, N1, N2>::pre_process()
   Schur_B.resize(parameter_a_size);
   Schur_A.setZero();
   Schur_B.setZero();
-  for (int i = 0; i < parameter_2_link.size(); ++i)
+  for (int i = 0; i < parameter_point_link.size(); ++i)
   {
-    sort(parameter_2_link[i].begin(), parameter_2_link[i].end(), cmp);
+    sort(parameter_point_link[i].begin(), parameter_point_link[i].end(), cmp);
   }
 }
 template <int N, int N1, int N2>
@@ -197,19 +197,19 @@ bool Problem<N, N1, N2>::update_parameter(double *step)
 {
   // from cadidte to params and compute the step norm
   double step_norm = 0.0;
-  for (int i = 0; i < parameter_1_vector.size(); ++i)
+  for (int i = 0; i < parameter_camera_vector.size(); ++i)
   {
-    parameter_1_vector[i]->params = parameter_1_vector[i]->candidate;
-    parameter_1_vector[i]->hessian.setZero();
-    parameter_1_vector[i]->residual.setZero();
-    step_norm = step_norm + parameter_1_vector[i]->delta.norm();
+    parameter_camera_vector[i]->params = parameter_camera_vector[i]->candidate;
+    parameter_camera_vector[i]->hessian.setZero();
+    parameter_camera_vector[i]->residual.setZero();
+    step_norm = step_norm + parameter_camera_vector[i]->delta.norm();
   }
-  for (int i = 0; i < parameter_2_vector.size(); ++i)
+  for (int i = 0; i < parameter_point_vector.size(); ++i)
   {
-    parameter_2_vector[i]->params = parameter_2_vector[i]->candidate;
-    parameter_2_vector[i]->hessian.setZero();
-    parameter_2_vector[i]->residual.setZero();
-    step_norm = step_norm + parameter_2_vector[i]->delta.norm();
+    parameter_point_vector[i]->params = parameter_point_vector[i]->candidate;
+    parameter_point_vector[i]->hessian.setZero();
+    parameter_point_vector[i]->residual.setZero();
+    step_norm = step_norm + parameter_point_vector[i]->delta.norm();
   }
   (*step) = step_norm;
   if (step_norm < PARAMETERMIN)
@@ -219,17 +219,17 @@ bool Problem<N, N1, N2>::update_parameter(double *step)
   return true;
 }
 template <int N, int N1, int N2>
-bool Problem<N, N1, N2>::checkParameter_1(double *parameter_1)
+bool Problem<N, N1, N2>::checkParameter_camera(double *parameter_camera)
 {
   // we check if the double array had in the map<double,camera>
-  if (parameter_1_map.find(parameter_1) != parameter_1_map.end()) return true;
+  if (parameter_camera_map.find(parameter_camera) != parameter_camera_map.end()) return true;
   return false;
 }
 template <int N, int N1, int N2>
-bool Problem<N, N1, N2>::checkParameter_2(double *parameter_2)
+bool Problem<N, N1, N2>::checkParameter_point(double *parameter_point)
 {
   // we check if the double array had in the map<double,point>
-  if (parameter_2_map.find(parameter_2) != parameter_2_map.end()) return true;
+  if (parameter_point_map.find(parameter_point) != parameter_point_map.end()) return true;
   return false;
 }
 
@@ -244,49 +244,49 @@ void Problem<N, N1, N2>::addParameterBlock(
   // for saving time,we don't check the camera and point if there is
   // already a same tuple.So the input tuple must be different.
 
-  if (!checkParameter_1(parameter_camera))
+  if (!checkParameter_camera(parameter_camera))
   {
     Parameter<N1> *new_parameter = new Parameter<N1>();
     new_parameter->params =
         Eigen::Map<Eigen::Matrix<double, N1, 1>>(parameter_camera, N1);
 
     // 插入参数及其对应的索引
-    parameter_1_map.insert(
-        std::pair<double *, int>(parameter_camera, parameter_1_vector.size()));
+    parameter_camera_map.insert(
+        std::pair<double *, int>(parameter_camera, parameter_camera_vector.size()));
 
     // 将参数插入到参数向量中
-    parameter_1_vector.push_back(new_parameter);
+    parameter_camera_vector.push_back(new_parameter);
 
     // 更新参数向量的大小
     parameter_a_size = parameter_a_size + N1;
   }
 
-  if (!checkParameter_2(parameter_point))
+  if (!checkParameter_point(parameter_point))
   {
     Parameter<N2> *new_parameter = new Parameter<N2>();
     new_parameter->params =
         Eigen::Map<Eigen::Matrix<double, N2, 1>>(parameter_point, N2);
 
     // 插入参数及其对应的索引
-    parameter_2_map.insert(
-        std::pair<double *, int>(parameter_point, parameter_2_vector.size()));
+    parameter_point_map.insert(
+        std::pair<double *, int>(parameter_point, parameter_point_vector.size()));
 
     // 将参数插入到参数向量中
-    parameter_2_vector.push_back(new_parameter);
+    parameter_point_vector.push_back(new_parameter);
 
     // 
-    vector<Residual_block *> parameter_2_list;
-    parameter_2_link.push_back(parameter_2_list);
+    vector<Residual_block *> parameter_point_list;
+    parameter_point_link.push_back(parameter_point_list);
   }
 
   // 构建相机参数索引、点参数索引和代价函数的残差块之间的关联
   Residual_block *block =
-      new Residual_block(parameter_1_map[parameter_camera],
-                          parameter_2_map[parameter_point], 
+      new Residual_block(parameter_camera_map[parameter_camera],
+                          parameter_point_map[parameter_point], 
                           new_residual_node);
-  int id = block->parameter_b; // 点参数的索引
-  parameter_2_link[id].push_back(block); // 将残差块插入到点参数对应的链表中
-  residual_block.push_back(block); // 将残差块插入到残差块向量中
+  int id = block->point_index; // 点参数的索引
+  parameter_point_link[id].push_back(block); // 将残差块插入到点参数对应的链表中
+  residual_block_vector.push_back(block); // 将残差块插入到残差块向量中
 }
 
 /****************************************schur
@@ -302,32 +302,32 @@ void Problem<N, N1, N2>::schur_complement()
    * same process. finally because the Schur_A is a positive symmetric matrix,we
    * can use the llt() to solve delta camera.
    */
-  int length_camera = parameter_1_vector.size();
-  int parameter_2_link_size = parameter_2_link.size();
+  int length_camera = parameter_camera_vector.size();
+  int parameter_point_link_size = parameter_point_link.size();
 
-  for (int i = 0; i < parameter_2_link_size; ++i)
+  for (int i = 0; i < parameter_point_link_size; ++i)
   {
-    int inner_size = parameter_2_link[i].size();
+    int inner_size = parameter_point_link[i].size();
     for (int j = 0; j < inner_size; ++j)
     {
-      int id_1 = parameter_2_link[i][j]->parameter_a;
+      int id_1 = parameter_point_link[i][j]->camera_index;
       Eigen::Matrix<double, N1, N2> WT_Einv;
-      WT_Einv.noalias() = parameter_2_link[i][j]->hessian_W.lazyProduct(
-          parameter_2_vector[i]->hessian_inverse);
+      WT_Einv.noalias() = parameter_point_link[i][j]->hessian_W.lazyProduct(
+          parameter_point_vector[i]->hessian_inverse);
       Schur_B.segment<N1>(id_1 * N1).noalias() -=
-          WT_Einv.lazyProduct(parameter_2_vector[i]->residual);
+          WT_Einv.lazyProduct(parameter_point_vector[i]->residual);
       for (int k = j; k < inner_size; ++k)
       {
-        int id_2 = parameter_2_link[i][k]->parameter_a;
+        int id_2 = parameter_point_link[i][k]->camera_index;
         Schur_A.block<N1, N1>(id_1 * N1, id_2 * N1).noalias() -=
-            WT_Einv.lazyProduct(parameter_2_link[i][k]->hessian_W.transpose());
+            WT_Einv.lazyProduct(parameter_point_link[i][k]->hessian_W.transpose());
       }
     }
   }
   Schur_B = Schur_A.selfadjointView<Eigen::Upper>().llt().solve(Schur_B);
   for (int i = 0; i < length_camera; ++i)
   {
-    parameter_1_vector[i]->delta = Schur_B.segment<N1>(i * N1);
+    parameter_camera_vector[i]->delta = Schur_B.segment<N1>(i * N1);
   }
 }
 
@@ -337,17 +337,17 @@ template <int N, int N1, int N2>
 void Problem<N, N1, N2>::init_scaling()
 {
   // jacobi_scaling = 1/(1+sqrt(jacobi_scaling )) plus the one to avoid / zero
-  int parameter_1_length = parameter_1_vector.size();
-  int parameter_2_length = parameter_2_vector.size();
+  int parameter_1_length = parameter_camera_vector.size();
+  int parameter_2_length = parameter_point_vector.size();
   for (int i = 0; i < parameter_1_length; ++i)
   {
-    parameter_1_vector[i]->jacobi_scaling =
-        1.0 / (1.0 + sqrt(parameter_1_vector[i]->jacobi_scaling.array()));
+    parameter_camera_vector[i]->jacobi_scaling =
+        1.0 / (1.0 + sqrt(parameter_camera_vector[i]->jacobi_scaling.array()));
   }
   for (int i = 0; i < parameter_2_length; ++i)
   {
-    parameter_2_vector[i]->jacobi_scaling =
-        1.0 / (1.0 + sqrt(parameter_2_vector[i]->jacobi_scaling.array()));
+    parameter_point_vector[i]->jacobi_scaling =
+        1.0 / (1.0 + sqrt(parameter_point_vector[i]->jacobi_scaling.array()));
   }
 }
 
@@ -366,9 +366,9 @@ void Problem<N, N1, N2>::solve()
   double Miu = INITMIU;
   double v0 = 2.0;
   clock_t t1 = clock();
-  int parameter_1_vector_length = parameter_1_vector.size(); // 相机参数数量
-  int parameter_2_vector_length = parameter_2_vector.size(); // 点参数数量
-  int residual_node_length = residual_block.size(); // 残差块数量
+  int parameter_1_vector_length = parameter_camera_vector.size(); // 相机参数数量
+  int parameter_2_vector_length = parameter_point_vector.size(); // 点参数数量
+  int residual_node_length = residual_block_vector.size(); // 残差块数量
   double residual_cost = 0.0;
 
   // 输出相机参数和点参数的数量，以及残差块的数量
@@ -378,17 +378,17 @@ void Problem<N, N1, N2>::solve()
 
   for (int i = 0; i < residual_node_length; ++i)
   {
-    residual_block[i]->residual_node->computeJacobiandResidual(
-        &parameter_1_vector[residual_block[i]->parameter_a]->params,
-        &parameter_2_vector[residual_block[i]->parameter_b]->params,
-        &residual_block[i]->jacobi_parameter_1,
-        &residual_block[i]->jacobi_parameter_2, 
-        &residual_block[i]->residual);
-    residual_cost = residual_cost + residual_block[i]->residual.squaredNorm();
-    parameter_1_vector[residual_block[i]->parameter_a]->jacobi_scaling +=
-        residual_block[i]->jacobi_parameter_1.colwise().squaredNorm();
-    parameter_2_vector[residual_block[i]->parameter_b]->jacobi_scaling +=
-        residual_block[i]->jacobi_parameter_2.colwise().squaredNorm();
+    residual_block_vector[i]->residual_node->computeJacobiandResidual(
+        &parameter_camera_vector[residual_block_vector[i]->camera_index]->params,
+        &parameter_point_vector[residual_block_vector[i]->point_index]->params,
+        &residual_block_vector[i]->jacobi_parameter_1,
+        &residual_block_vector[i]->jacobi_parameter_2, 
+        &residual_block_vector[i]->residual);
+    residual_cost = residual_cost + residual_block_vector[i]->residual.squaredNorm();
+    parameter_camera_vector[residual_block_vector[i]->camera_index]->jacobi_scaling +=
+        residual_block_vector[i]->jacobi_parameter_1.colwise().squaredNorm();
+    parameter_point_vector[residual_block_vector[i]->point_index]->jacobi_scaling +=
+        residual_block_vector[i]->jacobi_parameter_2.colwise().squaredNorm();
   }
   residual_cost /= 2;
   pre_process();
@@ -400,15 +400,15 @@ void Problem<N, N1, N2>::solve()
   {
     for (typename std::vector<
              BoundleAdjustment::Problem<N, N1, N2>::Residual_block *>::iterator
-             it = residual_block.begin();
-         it != residual_block.end(); ++it)
+             it = residual_block_vector.begin();
+         it != residual_block_vector.end(); ++it)
     {
       (*it)->jacobi_parameter_1 = (*it)->jacobi_parameter_1.array().rowwise() *
-                                  parameter_1_vector[(*it)->parameter_a]
+                                  parameter_camera_vector[(*it)->camera_index]
                                       ->jacobi_scaling.transpose()
                                       .array();
       (*it)->jacobi_parameter_2 = (*it)->jacobi_parameter_2.array().rowwise() *
-                                  parameter_2_vector[(*it)->parameter_b]
+                                  parameter_point_vector[(*it)->point_index]
                                       ->jacobi_scaling.transpose()
                                       .array();
       (*it)->hessian_W.noalias() =
@@ -462,20 +462,20 @@ void Problem<N, N1, N2>::solve()
       Schur_B.setZero();
       for (typename std::vector<BoundleAdjustment::Problem<
                N, N1, N2>::Residual_block *>::iterator it =
-               residual_block.begin();
-           it != residual_block.end(); ++it)
+               residual_block_vector.begin();
+           it != residual_block_vector.end(); ++it)
       {
-        int id_a = (*it)->parameter_a;
-        int id_b = (*it)->parameter_b;
+        int id_a = (*it)->camera_index;
+        int id_b = (*it)->point_index;
         Schur_A.block<N1, N1>(id_a * N1, id_a * N1).noalias() +=
             (*it)->jacobi_parameter_1.transpose().lazyProduct(
                 (*it)->jacobi_parameter_1);
         Schur_B.segment<N1>(id_a * N1).noalias() -=
             (*it)->jacobi_parameter_1.transpose().lazyProduct((*it)->residual);
-        parameter_2_vector[id_b]->hessian.noalias() +=
+        parameter_point_vector[id_b]->hessian.noalias() +=
             (*it)->jacobi_parameter_2.transpose().lazyProduct(
                 (*it)->jacobi_parameter_2);
-        parameter_2_vector[id_b]->residual.noalias() -=
+        parameter_point_vector[id_b]->residual.noalias() -=
             (*it)->jacobi_parameter_2.transpose().lazyProduct((*it)->residual);
       }
 
@@ -485,41 +485,41 @@ void Problem<N, N1, N2>::solve()
       {
         // update the parameter_2_hessian by Miu and compute the inverse
 
-        parameter_2_vector[i]->hessian.diagonal().noalias() +=
-            1 / Miu * parameter_2_vector[i]->hessian.diagonal();
-        parameter_2_vector[i]->hessian_inverse =
-            parameter_2_vector[i]->hessian.inverse();
+        parameter_point_vector[i]->hessian.diagonal().noalias() +=
+            1 / Miu * parameter_point_vector[i]->hessian.diagonal();
+        parameter_point_vector[i]->hessian_inverse =
+            parameter_point_vector[i]->hessian.inverse();
       }
 
       schur_complement();
 
       for (int i = 0; i < residual_node_length; ++i)
       {
-        int id = residual_block[i]->parameter_b;
-        parameter_2_vector[id]->residual.noalias() -=
-            residual_block[i]->hessian_W.transpose().lazyProduct(
-                parameter_1_vector[residual_block[i]->parameter_a]->delta);
+        int id = residual_block_vector[i]->point_index;
+        parameter_point_vector[id]->residual.noalias() -=
+            residual_block_vector[i]->hessian_W.transpose().lazyProduct(
+                parameter_camera_vector[residual_block_vector[i]->camera_index]->delta);
       }
       for (int i = 0; i < parameter_2_vector_length; ++i)
       {
-        parameter_2_vector[i]->delta.noalias() =
-            parameter_2_vector[i]->hessian_inverse.lazyProduct(
-                parameter_2_vector[i]->residual);
+        parameter_point_vector[i]->delta.noalias() =
+            parameter_point_vector[i]->hessian_inverse.lazyProduct(
+                parameter_point_vector[i]->residual);
       }
       model_cost = 0.0;
 
       for (typename std::vector<BoundleAdjustment::Problem<
                N, N1, N2>::Residual_block *>::iterator it =
-               residual_block.begin();
-           it != residual_block.end(); ++it)
+               residual_block_vector.begin();
+           it != residual_block_vector.end(); ++it)
       {
         Eigen::Matrix<double, N, 1> delta_parameter;
-        int id_1 = (*it)->parameter_a;
-        int id_2 = (*it)->parameter_b;
+        int id_1 = (*it)->camera_index;
+        int id_2 = (*it)->point_index;
         delta_parameter = (*it)->jacobi_parameter_1.lazyProduct(
-                              parameter_1_vector[id_1]->delta) +
+                              parameter_camera_vector[id_1]->delta) +
                           (*it)->jacobi_parameter_2.lazyProduct(
-                              parameter_2_vector[id_2]->delta);
+                              parameter_point_vector[id_2]->delta);
         model_cost += (delta_parameter.transpose() *
                        (2 * (*it)->residual + delta_parameter))(0, 0);
       }
@@ -529,30 +529,30 @@ void Problem<N, N1, N2>::solve()
       {
         for (int i = 0; i < parameter_1_vector_length; ++i)
         {
-          parameter_1_vector[i]->delta.array() *=
-              parameter_1_vector[i]->jacobi_scaling.array();
+          parameter_camera_vector[i]->delta.array() *=
+              parameter_camera_vector[i]->jacobi_scaling.array();
         }
         for (int i = 0; i < parameter_2_vector_length; ++i)
         {
-          parameter_2_vector[i]->delta.array() *=
-              parameter_2_vector[i]->jacobi_scaling.array();
+          parameter_point_vector[i]->delta.array() *=
+              parameter_point_vector[i]->jacobi_scaling.array();
         }
       }
       new_residual_cost = 0.0;
       for (typename std::vector<BoundleAdjustment::Problem<
                N, N1, N2>::Residual_block *>::iterator it =
-               residual_block.begin();
-           it != residual_block.end(); ++it)
+               residual_block_vector.begin();
+           it != residual_block_vector.end(); ++it)
       {
-        int id_1 = (*it)->parameter_a;
-        int id_2 = (*it)->parameter_b;
-        parameter_1_vector[id_1]->candidate =
-            parameter_1_vector[id_1]->params + parameter_1_vector[id_1]->delta;
-        parameter_2_vector[id_2]->candidate =
-            parameter_2_vector[id_2]->params + parameter_2_vector[id_2]->delta;
+        int id_1 = (*it)->camera_index;
+        int id_2 = (*it)->point_index;
+        parameter_camera_vector[id_1]->candidate =
+            parameter_camera_vector[id_1]->params + parameter_camera_vector[id_1]->delta;
+        parameter_point_vector[id_2]->candidate =
+            parameter_point_vector[id_2]->params + parameter_point_vector[id_2]->delta;
         (*it)->residual_node->computeResidual(
-            &parameter_1_vector[id_1]->candidate,
-            &parameter_2_vector[id_2]->candidate, &new_residual_cost);
+            &parameter_camera_vector[id_1]->candidate,
+            &parameter_point_vector[id_2]->candidate, &new_residual_cost);
       }
       new_residual_cost /= 2;
       double relative_decrease =
@@ -590,12 +590,12 @@ void Problem<N, N1, N2>::solve()
     }
     for (typename std::vector<
              BoundleAdjustment::Problem<N, N1, N2>::Residual_block *>::iterator
-             it = residual_block.begin();
-         it != residual_block.end(); ++it)
+             it = residual_block_vector.begin();
+         it != residual_block_vector.end(); ++it)
     {
       (*it)->residual_node->computeJacobiandResidual(
-          &parameter_1_vector[(*it)->parameter_a]->params,
-          &parameter_2_vector[(*it)->parameter_b]->params,
+          &parameter_camera_vector[(*it)->camera_index]->params,
+          &parameter_point_vector[(*it)->point_index]->params,
           &(*it)->jacobi_parameter_1, &(*it)->jacobi_parameter_2,
           &(*it)->residual);
     }
@@ -614,17 +614,17 @@ template <int N, int N1, int N2>
 void Problem<N, N1, N2>::post_process()
 {
   map<double *, int>::iterator iter;
-  for (iter = parameter_1_map.begin(); iter != parameter_1_map.end(); ++iter)
+  for (iter = parameter_camera_map.begin(); iter != parameter_camera_map.end(); ++iter)
   {
     Eigen::Map<Eigen::Matrix<double, N1, 1>>(
-        iter->first, parameter_1_vector[iter->second]->params.rows(), 1) =
-        parameter_1_vector[iter->second]->params;
+        iter->first, parameter_camera_vector[iter->second]->params.rows(), 1) =
+        parameter_camera_vector[iter->second]->params;
   }
-  for (iter = parameter_2_map.begin(); iter != parameter_2_map.end(); ++iter)
+  for (iter = parameter_point_map.begin(); iter != parameter_point_map.end(); ++iter)
   {
     Eigen::Map<Eigen::Matrix<double, N2, 1>>(
-        iter->first, parameter_2_vector[iter->second]->params.rows(), 1) =
-        parameter_2_vector[iter->second]->params;
+        iter->first, parameter_point_vector[iter->second]->params.rows(), 1) =
+        parameter_point_vector[iter->second]->params;
   }
 }
 }  // namespace BoundleAdjustment
