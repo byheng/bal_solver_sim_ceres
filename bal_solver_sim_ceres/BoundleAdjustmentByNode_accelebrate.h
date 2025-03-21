@@ -47,6 +47,11 @@ using namespace std;
  *
  */
 namespace BoundleAdjustment {
+/*
+  N : the dimension of the residual
+  N1: the dimension of the camera parameter
+  N2: the dimension of the point parameter
+*/
 template <int N, int N1, int N2>
 class Problem
 {
@@ -55,8 +60,8 @@ class Problem
   ~Problem();
   struct Residual_block
   {
-    Residual_block(int a, int b,
-                   BoundleAdjustment::CostFunction<N, N1, N2> *node)
+    Residual_block(int a, int b, // 相机参数和点参数的索引
+                   BoundleAdjustment::CostFunction<N, N1, N2> *node) // 代价函数，包含观测值
         : parameter_a(a), parameter_b(b)
     {
       jacobi_parameter_1.setZero();
@@ -79,6 +84,7 @@ class Problem
     Eigen::Matrix<double, N1, N2> hessian_W;
     Eigen::Matrix<double, N, 1> residual;
   };
+
   template <int n>
   struct Parameter
   {
@@ -92,18 +98,19 @@ class Problem
       delta.setZero();
       residual.setZero();
     }
-    Eigen::Matrix<double, n, 1> params;
-    Eigen::Matrix<double, n, 1> candidate;
-    Eigen::Matrix<double, n, 1> delta;
-    Eigen::Matrix<double, n, 1> residual;
-    Eigen::Matrix<double, n, 1> jacobi_scaling;
-    Eigen::Matrix<double, n, n> hessian;
+    Eigen::Matrix<double, n, 1> params; // 当前参数值
+    Eigen::Matrix<double, n, 1> candidate; // 候选参数值
+    Eigen::Matrix<double, n, 1> delta; // 变化量
+    Eigen::Matrix<double, n, 1> residual; // 残差值
+    Eigen::Matrix<double, n, 1> jacobi_scaling; // Jacobian 矩阵的缩放因子
+    Eigen::Matrix<double, n, n> hessian; // Hessian 矩阵
     // The hessian_inverse used just for time saving.
-    Eigen::Matrix<double, n, n> hessian_inverse;
+    Eigen::Matrix<double, n, n> hessian_inverse; // Hessian 矩阵的逆矩阵，用于节省时间
   };
-  vector<Residual_block *> residual_block;
-  vector<Parameter<N1> *> parameter_1_vector;
-  vector<Parameter<N2> *> parameter_2_vector;
+
+  vector<Residual_block *> residual_block; // 残差块，与观测值数量相等
+  vector<Parameter<N1> *> parameter_1_vector; // 相机参数
+  vector<Parameter<N2> *> parameter_2_vector; // 点参数
   map<double *, int> parameter_1_map;
   map<double *, int> parameter_2_map;
   int parameter_a_size;
@@ -225,41 +232,61 @@ bool Problem<N, N1, N2>::checkParameter_2(double *parameter_2)
   if (parameter_2_map.find(parameter_2) != parameter_2_map.end()) return true;
   return false;
 }
+
+/****************************************addParameterBlock********************************/
+// 
 template <int N, int N1, int N2>
 void Problem<N, N1, N2>::addParameterBlock(
-    double *parameter_1, double *parameter_2,
-    BoundleAdjustment::CostFunction<N, N1, N2> *new_residual_node)
+    double *parameter_camera, // 相机参数
+    double *parameter_point, // 点参数
+    BoundleAdjustment::CostFunction<N, N1, N2> *new_residual_node) // the costfunction
 {
   // for saving time,we don't check the camera and point if there is
   // already a same tuple.So the input tuple must be different.
 
-  if (!checkParameter_1(parameter_1))
+  if (!checkParameter_1(parameter_camera))
   {
     Parameter<N1> *new_parameter = new Parameter<N1>();
     new_parameter->params =
-        Eigen::Map<Eigen::Matrix<double, N1, 1>>(parameter_1, N1);
+        Eigen::Map<Eigen::Matrix<double, N1, 1>>(parameter_camera, N1);
+
+    // 插入参数及其对应的索引
     parameter_1_map.insert(
-        std::pair<double *, int>(parameter_1, parameter_1_vector.size()));
+        std::pair<double *, int>(parameter_camera, parameter_1_vector.size()));
+
+    // 将参数插入到参数向量中
     parameter_1_vector.push_back(new_parameter);
+
+    // 更新参数向量的大小
     parameter_a_size = parameter_a_size + N1;
   }
-  if (!checkParameter_2(parameter_2))
+
+  if (!checkParameter_2(parameter_point))
   {
     Parameter<N2> *new_parameter = new Parameter<N2>();
     new_parameter->params =
-        Eigen::Map<Eigen::Matrix<double, N2, 1>>(parameter_2, N2);
+        Eigen::Map<Eigen::Matrix<double, N2, 1>>(parameter_point, N2);
+
+    // 插入参数及其对应的索引
     parameter_2_map.insert(
-        std::pair<double *, int>(parameter_2, parameter_2_vector.size()));
+        std::pair<double *, int>(parameter_point, parameter_2_vector.size()));
+
+    // 将参数插入到参数向量中
     parameter_2_vector.push_back(new_parameter);
+
+    // 
     vector<Residual_block *> parameter_2_list;
     parameter_2_link.push_back(parameter_2_list);
   }
+
+  // 构建相机参数索引、点参数索引和代价函数的残差块之间的关联
   Residual_block *block =
-      new Residual_block(parameter_1_map[parameter_1],
-                         parameter_2_map[parameter_2], new_residual_node);
-  int id = block->parameter_b;
-  parameter_2_link[id].push_back(block);
-  residual_block.push_back(block);
+      new Residual_block(parameter_1_map[parameter_camera],
+                          parameter_2_map[parameter_point], 
+                          new_residual_node);
+  int id = block->parameter_b; // 点参数的索引
+  parameter_2_link[id].push_back(block); // 将残差块插入到点参数对应的链表中
+  residual_block.push_back(block); // 将残差块插入到残差块向量中
 }
 
 /****************************************schur
@@ -323,6 +350,7 @@ void Problem<N, N1, N2>::init_scaling()
         1.0 / (1.0 + sqrt(parameter_2_vector[i]->jacobi_scaling.array()));
   }
 }
+
 template <int N, int N1, int N2>
 void Problem<N, N1, N2>::solve()
 {
@@ -338,17 +366,24 @@ void Problem<N, N1, N2>::solve()
   double Miu = INITMIU;
   double v0 = 2.0;
   clock_t t1 = clock();
-  int parameter_1_vector_length = parameter_1_vector.size();
-  int parameter_2_vector_length = parameter_2_vector.size();
-  int residual_node_length = residual_block.size();
+  int parameter_1_vector_length = parameter_1_vector.size(); // 相机参数数量
+  int parameter_2_vector_length = parameter_2_vector.size(); // 点参数数量
+  int residual_node_length = residual_block.size(); // 残差块数量
   double residual_cost = 0.0;
+
+  // 输出相机参数和点参数的数量，以及残差块的数量
+  cout << "parameter_1_vector_length: " << parameter_1_vector_length << endl;
+  cout << "parameter_2_vector_length: " << parameter_2_vector_length << endl;
+  cout << "residual_node_length: " << residual_node_length << endl;
+
   for (int i = 0; i < residual_node_length; ++i)
   {
     residual_block[i]->residual_node->computeJacobiandResidual(
         &parameter_1_vector[residual_block[i]->parameter_a]->params,
         &parameter_2_vector[residual_block[i]->parameter_b]->params,
         &residual_block[i]->jacobi_parameter_1,
-        &residual_block[i]->jacobi_parameter_2, &residual_block[i]->residual);
+        &residual_block[i]->jacobi_parameter_2, 
+        &residual_block[i]->residual);
     residual_cost = residual_cost + residual_block[i]->residual.squaredNorm();
     parameter_1_vector[residual_block[i]->parameter_a]->jacobi_scaling +=
         residual_block[i]->jacobi_parameter_1.colwise().squaredNorm();

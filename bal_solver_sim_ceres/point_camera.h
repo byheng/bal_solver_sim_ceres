@@ -1,8 +1,8 @@
 #ifndef BOUNDLEADJUSTMENT_POINT_CAMERA_H
 #define BOUNDLEADJUSTMENT_POINT_CAMERA_H
+
 #include <math.h>
 #include <time.h>
-
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/LU>
@@ -13,18 +13,20 @@
 #include <queue>
 #include <set>
 #include <vector>
-
 #include "Eigen/Eigen"
 #include "Eigen/SparseQR"
 #include "algorithm"
 #include "jet.h"
 #include "stdlib.h"
+
 using namespace std;
+
 double debug = true;
+
 namespace BoundleAdjustment {
+
 template <int N, int N1, int N2>
-class CostFunction
-{
+class CostFunction {
  public:
   CostFunction();
   ~CostFunction();
@@ -38,14 +40,12 @@ class CostFunction
                                const Eigen::Matrix<double, N2, 1> *params_2,
                                double *ans) = 0;
 };
+
 template <int N, int N1, int N2>
-CostFunction<N, N1, N2>::CostFunction()
-{
-}
+CostFunction<N, N1, N2>::CostFunction() {}
+
 template <int N, int N1, int N2>
-CostFunction<N, N1, N2>::~CostFunction()
-{
-}
+CostFunction<N, N1, N2>::~CostFunction() {}
 
 /* The residual_node is the key class to compute the residual and jacobi.
  * It also the most time-cost process in function computeJacobianandResidual()
@@ -53,9 +53,9 @@ CostFunction<N, N1, N2>::~CostFunction()
  * a function named "Evaluate",and the function Evaluate must be a template
  * function which could compute with both double and jet
  */
+// Residual_node 模板类，继承 CostFunction 类
 template <class T, int N, int N1, int N2>
-class Residual_node : public CostFunction<N, N1, N2>
-{
+class Residual_node : public CostFunction<N, N1, N2> {
  public:
   Residual_node();
   Residual_node(T *costfunction);
@@ -75,43 +75,36 @@ class Residual_node : public CostFunction<N, N1, N2>
 };
 
 template <class T, int N, int N1, int N2>
-Residual_node<T, N, N1, N2>::Residual_node()
-{
-}
+Residual_node<T, N, N1, N2>::Residual_node() {}
+
 template <class T, int N, int N1, int N2>
 Residual_node<T, N, N1, N2>::Residual_node(T *costfunction)
-    : costfunction_(costfunction)
-{
-}
+    : costfunction_(costfunction) {}
 
+    /******************compute jacobi*************************/
 template <class T, int N, int N1, int N2>
 void Residual_node<T, N, N1, N2>::computeJacobiandResidual(
     const Eigen::Matrix<double, N1, 1> *params_1,
     const Eigen::Matrix<double, N2, 1> *params_2,
     Eigen::Matrix<double, N, N1> *jacobi_parameter_1,
     Eigen::Matrix<double, N, N2> *jacobi_parameter_2,
-    Eigen::Matrix<double, N, 1> *jacobi_residual)
-{
+    Eigen::Matrix<double, N, 1> *jacobi_residual) {
   // clock_t t1=clock();
   /// this problem, N=2, N1=9, N2=3;
   jet<N1 + N2> cameraJet[N1];
   jet<N1 + N2> pointJet[N2];
-  for (int i = 0; i < N1; i++)
-  {
+  for (int i = 0; i < N1; i++) {
     cameraJet[i].init((*params_1)[i], i);
   }
-  for (int i = 0; i < N2; i++)
-  {
+  for (int i = 0; i < N2; i++) {
     pointJet[i].init((*params_2)[i], i + N1);
   }
   jet<N1 + N2> *residual = new jet<N1 + N2>[N];
   costfunction_->Evaluate(cameraJet, pointJet, residual);
-  for (int i = 0; i < N; i++)
-  {
+  for (int i = 0; i < N; i++) {
     (*jacobi_residual)(i, 0) = residual[i].a;
   }
-  for (int i = 0; i < N; i++)
-  {
+  for (int i = 0; i < N; i++) {
     (*jacobi_parameter_1).row(i) = residual[i].v.head(N1);
     (*jacobi_parameter_2).row(i) = residual[i].v.tail(N2);
   }
@@ -122,11 +115,11 @@ void Residual_node<T, N, N1, N2>::computeJacobiandResidual(
   return;
   /******************end compute jacobi*************************/
 }
+
 template <class T, int N, int N1, int N2>
 void Residual_node<T, N, N1, N2>::computeResidual(
     const Eigen::Matrix<double, N1, 1> *params_1,
-    const Eigen::Matrix<double, N2, 1> *params_2, double *ans)
-{
+    const Eigen::Matrix<double, N2, 1> *params_2, double *ans) {
   double parameterD_1[N1];
   Eigen::Map<Eigen::Matrix<double, N1, 1>>(parameterD_1, params_1->rows(), 1) =
       (*params_1);
@@ -135,12 +128,12 @@ void Residual_node<T, N, N1, N2>::computeResidual(
       (*params_2);
   double residual[N];
   costfunction_->Evaluate(parameterD_1, parameterD_2, residual);
-  for (int i = 0; i < N; ++i)
-  {
+  for (int i = 0; i < N; ++i) {
     (*ans) += residual[i] * residual[i];
   }
   // std::cout << "Residual: " << *ans << std::endl;
 }
+
 }  // namespace BoundleAdjustment
 
 #endif

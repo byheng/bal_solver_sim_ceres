@@ -3,7 +3,7 @@
 
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Dense>
-#include <filesystem>
+#include <experimental/filesystem> // for gcc < 8.0
 #include <fstream>
 #include <iostream>
 #include <vector>
