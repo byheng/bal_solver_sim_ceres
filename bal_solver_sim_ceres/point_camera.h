@@ -88,7 +88,9 @@ void Residual_node<T, N, N1, N2>::computeJacobiandResidual(
     const Eigen::Matrix<double, N2, 1> *params_2, // 点参数
     Eigen::Matrix<double, N, N1> *jacobi_parameter_1,
     Eigen::Matrix<double, N, N2> *jacobi_parameter_2,
-    Eigen::Matrix<double, N, 1> *jacobi_residual) {
+    Eigen::Matrix<double, N, 1> *jacobi_residual) { // 残差
+
+  // 创建相机参数和点参数的 jet 对象
   // clock_t t1=clock();
   /// this problem, N=2, N1=9, N2=3;
   jet<N1 + N2> cameraJet[N1]; 
@@ -99,8 +101,31 @@ void Residual_node<T, N, N1, N2>::computeJacobiandResidual(
   for (int i = 0; i < N2; i++) {
     pointJet[i].init((*params_2)[i], i + N1);
   }
+
+  // debug
+  // for (int i = 0; i < N1; i++) {
+  //   std::stringstream ss;
+  //   ss << "cameraJet[" << i << "]: ";
+  //   cameraJet[i].printjet(ss.str());
+  // }
+  // for (int i = 0; i < N2; i++) {
+  //   std::stringstream ss;
+  //   ss << "pointJet[" << i << "]: ";
+  //   pointJet[i].printjet(ss.str());
+  // }
+  // cout << endl;
+  // end debug
+
+  // 计算重投影误差
   jet<N1 + N2> *residual = new jet<N1 + N2>[N];
   costfunction_->Evaluate(cameraJet, pointJet, residual);
+  // for (int i = 0; i < N; i++) {
+  //   std::stringstream ss;
+  //   ss << "residual[" << i << "]: ";
+  //   residual[i].printjet(ss.str());
+  // }
+
+
   for (int i = 0; i < N; i++) {
     (*jacobi_residual)(i, 0) = residual[i].a;
   }

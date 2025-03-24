@@ -164,6 +164,8 @@ bool Problem<N, N1, N2>::cmp(Residual_block *A, Residual_block *B)
   if (A->camera_index < B->camera_index) return true;
   return false;
 }
+
+// 
 template <int N, int N1, int N2>
 void Problem<N, N1, N2>::pre_process()
 {
@@ -183,8 +185,8 @@ void Problem<N, N1, N2>::pre_process()
    * link_list by camera id. Compute with the link happened in the function
    * schur_complement().
    */
-  Schur_A.resize(parameter_a_size, parameter_a_size);
-  Schur_B.resize(parameter_a_size);
+  Schur_A.resize(parameter_a_size, parameter_a_size); // 初始化 Schur_A　为方阵
+  Schur_B.resize(parameter_a_size); // 初始化 Schur_B 为列向量
   Schur_A.setZero();
   Schur_B.setZero();
   for (int i = 0; i < parameter_point_link.size(); ++i)
@@ -192,6 +194,8 @@ void Problem<N, N1, N2>::pre_process()
     sort(parameter_point_link[i].begin(), parameter_point_link[i].end(), cmp);
   }
 }
+
+// 
 template <int N, int N1, int N2>
 bool Problem<N, N1, N2>::update_parameter(double *step)
 {
@@ -337,14 +341,14 @@ template <int N, int N1, int N2>
 void Problem<N, N1, N2>::init_scaling()
 {
   // jacobi_scaling = 1/(1+sqrt(jacobi_scaling )) plus the one to avoid / zero
-  int parameter_1_length = parameter_camera_vector.size();
-  int parameter_2_length = parameter_point_vector.size();
-  for (int i = 0; i < parameter_1_length; ++i)
+  int parameter_camera_length = parameter_camera_vector.size();
+  int parameter_point_length = parameter_point_vector.size();
+  for (int i = 0; i < parameter_camera_length; ++i)
   {
     parameter_camera_vector[i]->jacobi_scaling =
         1.0 / (1.0 + sqrt(parameter_camera_vector[i]->jacobi_scaling.array()));
   }
-  for (int i = 0; i < parameter_2_length; ++i)
+  for (int i = 0; i < parameter_point_length; ++i)
   {
     parameter_point_vector[i]->jacobi_scaling =
         1.0 / (1.0 + sqrt(parameter_point_vector[i]->jacobi_scaling.array()));
@@ -366,14 +370,14 @@ void Problem<N, N1, N2>::solve()
   double Miu = INITMIU;
   double v0 = 2.0;
   clock_t t1 = clock();
-  int parameter_1_vector_length = parameter_camera_vector.size(); // 相机参数数量
-  int parameter_2_vector_length = parameter_point_vector.size(); // 点参数数量
+  int parameter_camera_vector_length = parameter_camera_vector.size(); // 相机参数数量
+  int parameter_point_vector_length = parameter_point_vector.size(); // 点参数数量
   int residual_node_length = residual_block_vector.size(); // 残差块数量
   double residual_cost = 0.0;
 
   // 输出相机参数和点参数的数量，以及残差块的数量
-  cout << "parameter_1_vector_length: " << parameter_1_vector_length << endl;
-  cout << "parameter_2_vector_length: " << parameter_2_vector_length << endl;
+  cout << "parameter_camera_vector_length: " << parameter_camera_vector_length << endl;
+  cout << "parameter_point_vector_length: " << parameter_point_vector_length << endl;
   cout << "residual_node_length: " << residual_node_length << endl;
 
   for (int i = 0; i < residual_node_length; ++i)
@@ -384,9 +388,9 @@ void Problem<N, N1, N2>::solve()
         &residual_block_vector[i]->jacobi_parameter_1,
         &residual_block_vector[i]->jacobi_parameter_2, 
         &residual_block_vector[i]->residual);
-    residual_cost = residual_cost + residual_block_vector[i]->residual.squaredNorm();
+    residual_cost = residual_cost + residual_block_vector[i]->residual.squaredNorm(); //  L2 范数的平方,即平方和
     parameter_camera_vector[residual_block_vector[i]->camera_index]->jacobi_scaling +=
-        residual_block_vector[i]->jacobi_parameter_1.colwise().squaredNorm();
+        residual_block_vector[i]->jacobi_parameter_1.colwise().squaredNorm(); // 求每一列的平方和
     parameter_point_vector[residual_block_vector[i]->point_index]->jacobi_scaling +=
         residual_block_vector[i]->jacobi_parameter_2.colwise().squaredNorm();
   }
@@ -481,7 +485,7 @@ void Problem<N, N1, N2>::solve()
 
       Schur_A.diagonal().noalias() += 1 / Miu * Schur_A.diagonal();
 
-      for (int i = 0; i < parameter_2_vector_length; ++i)
+      for (int i = 0; i < parameter_point_vector_length; ++i)
       {
         // update the parameter_2_hessian by Miu and compute the inverse
 
@@ -500,7 +504,7 @@ void Problem<N, N1, N2>::solve()
             residual_block_vector[i]->hessian_W.transpose().lazyProduct(
                 parameter_camera_vector[residual_block_vector[i]->camera_index]->delta);
       }
-      for (int i = 0; i < parameter_2_vector_length; ++i)
+      for (int i = 0; i < parameter_point_vector_length; ++i)
       {
         parameter_point_vector[i]->delta.noalias() =
             parameter_point_vector[i]->hessian_inverse.lazyProduct(
@@ -527,12 +531,12 @@ void Problem<N, N1, N2>::solve()
       cout << "model cost:" << model_cost << endl;
       if (model_cost < 0)
       {
-        for (int i = 0; i < parameter_1_vector_length; ++i)
+        for (int i = 0; i < parameter_camera_vector_length; ++i)
         {
           parameter_camera_vector[i]->delta.array() *=
               parameter_camera_vector[i]->jacobi_scaling.array();
         }
-        for (int i = 0; i < parameter_2_vector_length; ++i)
+        for (int i = 0; i < parameter_point_vector_length; ++i)
         {
           parameter_point_vector[i]->delta.array() *=
               parameter_point_vector[i]->jacobi_scaling.array();

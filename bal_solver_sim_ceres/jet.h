@@ -19,11 +19,12 @@
 #include "stdlib.h"
 // using namespace std;
 /* Like ceres the jet use for autodiff*/
+// 重载运算符，实现导数的计算
 template <int N>
 struct jet
 {
-  Eigen::Matrix<double, N, 1> v;
-  double a;
+  Eigen::Matrix<double, N, 1> v; // 各个方向上的导数值
+  double a;                     // 原函数值
   jet() : a(0.0) {}
   jet(const double& value) : a(value) { v.setZero(); }
   EIGEN_STRONG_INLINE jet(const double& value,
@@ -35,15 +36,20 @@ struct jet
     a = value;
     v(index, 0) = 1.0;
   }
-  
+
   void init(const double value, const int index)
   {
     v.setZero();
     a = value;
     v(index, 0) = 1.0;
   }
-};
 
+  void printjet(const std::string& prefix){
+    std::cout << std::setw(15) << prefix << std::setw(12) << a << " : ";
+    std::cout << v.transpose() << std::endl;
+  }
+};
+ 
 /****************jet overload******************/
 // for the camera BA,the autodiff only need overload the operator :jet+jet
 // number+jet -jet jet-number jet*jet number/jet jet/jet sqrt(jet) cos(jet)

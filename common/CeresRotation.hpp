@@ -37,9 +37,11 @@ inline void AngleAxisRotatePoint(const T angle_axis[3], const T pt[3],
 
     // Explicitly inlined evaluation of the cross product for
     // performance reasons.
+    // (w x pt)
     const T w_cross_pt[3] = {w[1] * pt[2] - w[2] * pt[1],
                              w[2] * pt[0] - w[0] * pt[2],
                              w[0] * pt[1] - w[1] * pt[0]};
+    // w . pt (1 - costheta)
     const T tmp =
         (w[0] * pt[0] + w[1] * pt[1] + w[2] * pt[2]) * (T(1.0) - costheta);
 
