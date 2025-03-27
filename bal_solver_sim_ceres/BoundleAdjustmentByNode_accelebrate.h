@@ -81,7 +81,7 @@ class Problem
     BoundleAdjustment::CostFunction<N, N1, N2> *residual_node;
     Eigen::Matrix<double, N, N1> jacobi_parameter_camera;
     Eigen::Matrix<double, N, N2> jacobi_parameter_point;
-    Eigen::Matrix<double, N1, N2> hessian_W;
+    Eigen::Matrix<double, N1, N2> hessian_W; // W 矩阵=JcT*Jp
     Eigen::Matrix<double, N, 1> residual;
   };
 
@@ -100,10 +100,10 @@ class Problem
     }
     Eigen::Matrix<double, n, 1> params; // 当前参数值
     Eigen::Matrix<double, n, 1> candidate; // 候选参数值
-    Eigen::Matrix<double, n, 1> delta; // 变化量
-    Eigen::Matrix<double, n, 1> residual; // 残差值
+    Eigen::Matrix<double, n, 1> delta; // 相机参数或3D点参数的变化量：deltaPc 或 deltaPp
+    Eigen::Matrix<double, n, 1> residual; // 向量r的第二项的后部：JpT * e（或JcT * e）(e 为残差）    // TODO: 该变量名需要修改，应为增量 g=JT*e
     Eigen::Matrix<double, n, 1> jacobi_scaling; // Jacobian 矩阵的缩放因子
-    Eigen::Matrix<double, n, n> hessian; // Hessian 矩阵
+    Eigen::Matrix<double, n, n> hessian; // Hessian 矩阵=JcT*Jc(或JpT*Jp)
     // The hessian_inverse used just for time saving.
     Eigen::Matrix<double, n, n> hessian_inverse; // Hessian 矩阵的逆矩阵，用于节省时间
   };
@@ -114,8 +114,8 @@ class Problem
   map<double *, int> parameter_camera_map;
   map<double *, int> parameter_point_map;
   int parameter_a_size;
-  Eigen::MatrixXd Schur_A; // 柯西分解中的 S 矩阵，大小为：相机数 * 相机数
-  Eigen::VectorXd Schur_B; // 柯西分解中的 r 向量，大小为：相机数
+  Eigen::MatrixXd Schur_A; // 柯西分解中的 S 矩阵，大小为：相机参数数 * 相机参数数
+  Eigen::VectorXd Schur_B; // 柯西分解中的 r 向量，大小为：相机参数数 = 相机数 * N1，在 schur_complement 中该变量保存得到的相机增量 deltaPc
   bool update_parameter(double *step);
   bool checkParameter_camera(double *parameter_camera);
   bool checkParameter_point(double *parameter_point);
@@ -130,7 +130,7 @@ class Problem
   // array the user given.
   void post_process();
   static bool cmp(Residual_block *A, Residual_block *B);
-  vector<vector<Residual_block *>> parameter_point_link;
+  vector<vector<Residual_block *>> parameter_point_link; // 点参数与残差块之间的关联，按照点参数排序，每一项是与该点相关的残差块列表
   void removeParam(int param_id);  // this function will add in next version
   void out_schur_elimilate();      // this function will add in next version
   void incremental_optimal();      // this function will add in next version
@@ -207,14 +207,14 @@ bool Problem<N, N1, N2>::update_parameter(double *step)
   {
     parameter_camera_vector[i]->params = parameter_camera_vector[i]->candidate;
     parameter_camera_vector[i]->hessian.setZero();
-    parameter_camera_vector[i]->residual.setZero();
+    parameter_camera_vector[i]->residual.setZero(); // TODO: 该变量名需要修改，应为增量 g=JT*e
     step_norm = step_norm + parameter_camera_vector[i]->delta.norm();
   }
   for (int i = 0; i < parameter_point_vector.size(); ++i)
   {
     parameter_point_vector[i]->params = parameter_point_vector[i]->candidate;
     parameter_point_vector[i]->hessian.setZero();
-    parameter_point_vector[i]->residual.setZero();
+    parameter_point_vector[i]->residual.setZero(); // TODO: 该变量名需要修改，应为增量 g=JT*e
     step_norm = step_norm + parameter_point_vector[i]->delta.norm();
   }
   (*step) = step_norm;
@@ -287,16 +287,18 @@ void Problem<N, N1, N2>::addParameterBlock(
 
   // 构建相机参数索引、点参数索引和代价函数的残差块之间的关联
   Residual_block *block =
-      new Residual_block(parameter_camera_map[parameter_camera],
-                          parameter_point_map[parameter_point], 
-                          new_residual_node);
+      new Residual_block(parameter_camera_map[parameter_camera], // 相机参数索引
+                          parameter_point_map[parameter_point],  // 点参数索引
+                          new_residual_node);                    // 代价函数
   int id = block->point_index; // 点参数的索引
   parameter_point_link[id].push_back(block); // 将残差块插入到点参数对应的链表中
   residual_block_vector.push_back(block); // 将残差块插入到残差块向量中
 }
 
-/****************************************schur
- * complement********************************/
+/***************schur complement*************
+ * 在该函数中完成 S 矩阵和 r 向量的计算
+ * 通过柯西分解求解得到相机参数的增量 deltaPc
+ * /
 template <int N, int N1, int N2>
 void Problem<N, N1, N2>::schur_complement()
 {
@@ -308,20 +310,28 @@ void Problem<N, N1, N2>::schur_complement()
    * same process. finally because the Schur_A is a positive symmetric matrix,we
    * can use the llt() to solve delta camera.
    */
-  int length_camera = parameter_camera_vector.size();
-  int parameter_point_link_size = parameter_point_link.size();
+  int length_camera = parameter_camera_vector.size();           // 相机参数数量
+  int parameter_point_link_size = parameter_point_link.size();  // 3D点参数数量
 
   for (int i = 0; i < parameter_point_link_size; ++i)
   {
-    int inner_size = parameter_point_link[i].size();
+    int inner_size = parameter_point_link[i].size();  // 该3D点对应的残差块数量
     for (int j = 0; j < inner_size; ++j)
     {
       int id_1 = parameter_point_link[i][j]->camera_index;
-      Eigen::Matrix<double, N1, N2> WT_Einv;
+
+      // 计算
+      Eigen::Matrix<double, N1, N2> WT_Einv; 
+
+      // 计算 W*U^(-1)
       WT_Einv.noalias() = parameter_point_link[i][j]->hessian_W.lazyProduct(
-          parameter_point_vector[i]->hessian_inverse);
+          parameter_point_vector[i]->hessian_inverse); // 矩阵 U 的逆矩阵
+
+      // 计算向量 r 完整的第二项：W*U^(-1)*Jp*e
       Schur_B.segment<N1>(id_1 * N1).noalias() -=
-          WT_Einv.lazyProduct(parameter_point_vector[i]->residual);
+          WT_Einv.lazyProduct(parameter_point_vector[i]->residual); // TODO: 该变量名需要修改，应为增量 g=JT*e
+
+      // 计算 Schur 矩阵的第二项：W*U^(-1)*W^T
       for (int k = j; k < inner_size; ++k)
       {
         int id_2 = parameter_point_link[i][k]->camera_index;
@@ -330,6 +340,9 @@ void Problem<N, N1, N2>::schur_complement()
       }
     }
   }
+
+  // 求解 S*deltaPc = r，即 Schur_A*deltaPc = Schur_B
+  // 将求解结果 deltaPc 保存在 Schur_B 中（两者size相同）
   Schur_B = Schur_A.selfadjointView<Eigen::Upper>().llt().solve(Schur_B);
   for (int i = 0; i < length_camera; ++i)
   {
@@ -393,8 +406,10 @@ void Problem<N, N1, N2>::solve()
         &residual_block_vector[i]->jacobi_parameter_point,  // 3D点参数的雅可比矩阵
         &residual_block_vector[i]->residual); // 残差，重投影误差
 
-
+    // 计算总的代价，即所有残差的平方和
     residual_cost = residual_cost + residual_block_vector[i]->residual.squaredNorm(); //  L2 范数的平方,即平方和
+
+    // 计算相机参数和点参数的雅可比矩阵的缩放因子
     parameter_camera_vector[residual_block_vector[i]->camera_index]->jacobi_scaling +=
         residual_block_vector[i]->jacobi_parameter_camera.colwise().squaredNorm(); // 求每一列的平方和
     parameter_point_vector[residual_block_vector[i]->point_index]->jacobi_scaling +=
@@ -413,14 +428,19 @@ void Problem<N, N1, N2>::solve()
              it = residual_block_vector.begin();
          it != residual_block_vector.end(); ++it)
     {
+      // 
       (*it)->jacobi_parameter_camera = (*it)->jacobi_parameter_camera.array().rowwise() *
                                   parameter_camera_vector[(*it)->camera_index]
                                       ->jacobi_scaling.transpose()
                                       .array();
+                                      
+      // 
       (*it)->jacobi_parameter_point = (*it)->jacobi_parameter_point.array().rowwise() *
                                   parameter_point_vector[(*it)->point_index]
                                       ->jacobi_scaling.transpose()
                                       .array();
+
+      // 计算 W 矩阵 = JcT * Jp
       (*it)->hessian_W.noalias() =
           (*it)->jacobi_parameter_camera.transpose().lazyProduct(
               (*it)->jacobi_parameter_point);
@@ -461,7 +481,7 @@ void Problem<N, N1, N2>::solve()
     }
     /*****************begin the inner loop******************************/
     int innercount = 0;
-    double r = -1.0;
+    double r = -1.0; // 阻尼系数 rho
 
     double new_residual_cost;
     while (innercount < INNER_ITERATION_NUMBER)
@@ -478,7 +498,7 @@ void Problem<N, N1, N2>::solve()
         int id_camera = (*it)->camera_index;
         int id_point = (*it)->point_index;
 
-        // 矩阵S的每一个对角块 = JcT * Jc
+        // 矩阵 S 的第一项 V 矩阵的每一个对角块 = JcT * Jc
         Schur_A.block<N1, N1>(id_camera * N1, id_camera * N1).noalias() +=
             (*it)->jacobi_parameter_camera.transpose().lazyProduct(
                 (*it)->jacobi_parameter_camera);
@@ -492,18 +512,19 @@ void Problem<N, N1, N2>::solve()
             (*it)->jacobi_parameter_point.transpose().lazyProduct(
                 (*it)->jacobi_parameter_point);
 
-        // 向量r的第二项的后部：JpT * e
+        // 向量r的第二项的后部：JpT * e，完整的第二项在 schur_complement() 中计算
         parameter_point_vector[id_point]->residual.noalias() -=
             (*it)->jacobi_parameter_point.transpose().lazyProduct((*it)->residual);
       } // 内循环结束
 
-      // 更新 Schur_A 的对角块，即加上 DTD 矩阵
+      // 更新 S 的第一项 V 矩阵的对角块，即加上 DTD 矩阵
       Schur_A.diagonal().noalias() += 1 / Miu * Schur_A.diagonal();
 
+      // 更新矩阵 U 的对角块，即加上 DTD 矩阵
+      // 计算矩阵 U 的逆矩阵
       for (int i = 0; i < parameter_point_vector_length; ++i)
       {
         // update the parameter_2_hessian by Miu and compute the inverse
-
         parameter_point_vector[i]->hessian.diagonal().noalias() +=
             1 / Miu * parameter_point_vector[i]->hessian.diagonal();
         parameter_point_vector[i]->hessian_inverse =
@@ -512,13 +533,18 @@ void Problem<N, N1, N2>::solve()
 
       schur_complement();
 
+      // 计算 deltaPp = U^(-1) * (Jp*e - W^T * deltaPc)
       for (int i = 0; i < residual_node_length; ++i)
       {
         int id = residual_block_vector[i]->point_index;
+
+        // 计算 Jp*e - W^T * deltaPc
         parameter_point_vector[id]->residual.noalias() -=
             residual_block_vector[i]->hessian_W.transpose().lazyProduct(
                 parameter_camera_vector[residual_block_vector[i]->camera_index]->delta);
       }
+
+      // 计算 deltaPp = U^(-1) * (Jp*e - W^T * deltaPc)
       for (int i = 0; i < parameter_point_vector_length; ++i)
       {
         parameter_point_vector[i]->delta.noalias() =
@@ -539,6 +565,8 @@ void Problem<N, N1, N2>::solve()
                               parameter_camera_vector[id_1]->delta) +
                           (*it)->jacobi_parameter_point.lazyProduct(
                               parameter_point_vector[id_2]->delta);
+
+        // 阻尼系数 rho 的分母，这里计算方式与论文中不同
         model_cost += (delta_parameter.transpose() *
                        (2 * (*it)->residual + delta_parameter))(0, 0);
       }
@@ -565,15 +593,21 @@ void Problem<N, N1, N2>::solve()
       {
         int id_1 = (*it)->camera_index;
         int id_2 = (*it)->point_index;
+
+        // 计算相机参数的候选值和点参数的候选值
         parameter_camera_vector[id_1]->candidate =
             parameter_camera_vector[id_1]->params + parameter_camera_vector[id_1]->delta;
         parameter_point_vector[id_2]->candidate =
             parameter_point_vector[id_2]->params + parameter_point_vector[id_2]->delta;
+
+        // 使用机参数的候选值和点参数的候选值计算新的残差
         (*it)->residual_node->computeResidual(
             &parameter_camera_vector[id_1]->candidate,
             &parameter_point_vector[id_2]->candidate, &new_residual_cost);
       }
       new_residual_cost /= 2;
+
+      // 阻尼系数 rho ,这里计算方式与论文中差了个负号
       double relative_decrease =
           (new_residual_cost - current_cost) / model_cost;
       double historical_relative_decrease =
@@ -629,6 +663,12 @@ void Problem<N, N1, N2>::solve()
   }
   post_process();
 }
+
+/*
+  map<double *, int> parameter_camera_map;
+  iter->first : double *parameter_camera
+  iter->second : int index
+*/
 template <int N, int N1, int N2>
 void Problem<N, N1, N2>::post_process()
 {
