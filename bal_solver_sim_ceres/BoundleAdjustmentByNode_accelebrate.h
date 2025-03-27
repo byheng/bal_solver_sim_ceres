@@ -64,8 +64,8 @@ class Problem
                    BoundleAdjustment::CostFunction<N, N1, N2> *node) // 代价函数，包含观测值
         : camera_index(a), point_index(b)
     {
-      jacobi_parameter_1.setZero();
-      jacobi_parameter_2.setZero();
+      jacobi_parameter_camera.setZero();
+      jacobi_parameter_point.setZero();
       hessian_W.setZero();
       residual.setZero();
       residual_node = node;
@@ -79,8 +79,8 @@ class Problem
      * used for this trick even it consume some compute time.
      */
     BoundleAdjustment::CostFunction<N, N1, N2> *residual_node;
-    Eigen::Matrix<double, N, N1> jacobi_parameter_1;
-    Eigen::Matrix<double, N, N2> jacobi_parameter_2;
+    Eigen::Matrix<double, N, N1> jacobi_parameter_camera;
+    Eigen::Matrix<double, N, N2> jacobi_parameter_point;
     Eigen::Matrix<double, N1, N2> hessian_W;
     Eigen::Matrix<double, N, 1> residual;
   };
@@ -114,8 +114,8 @@ class Problem
   map<double *, int> parameter_camera_map;
   map<double *, int> parameter_point_map;
   int parameter_a_size;
-  Eigen::MatrixXd Schur_A;
-  Eigen::VectorXd Schur_B;
+  Eigen::MatrixXd Schur_A; // 柯西分解中的 S 矩阵，大小为：相机数 * 相机数
+  Eigen::VectorXd Schur_B; // 柯西分解中的 r 向量，大小为：相机数
   bool update_parameter(double *step);
   bool checkParameter_camera(double *parameter_camera);
   bool checkParameter_point(double *parameter_point);
@@ -189,6 +189,8 @@ void Problem<N, N1, N2>::pre_process()
   Schur_B.resize(parameter_a_size); // 初始化 Schur_B 为列向量
   Schur_A.setZero();
   Schur_B.setZero();
+
+  // 根据相机索引值由小到大重排
   for (int i = 0; i < parameter_point_link.size(); ++i)
   {
     sort(parameter_point_link[i].begin(), parameter_point_link[i].end(), cmp);
@@ -373,26 +375,30 @@ void Problem<N, N1, N2>::solve()
   int parameter_camera_vector_length = parameter_camera_vector.size(); // 相机参数数量
   int parameter_point_vector_length = parameter_point_vector.size(); // 点参数数量
   int residual_node_length = residual_block_vector.size(); // 残差块数量
-  double residual_cost = 0.0;
+  double residual_cost = 0.0; // 总的代价，即所有残差的平方和
 
   // 输出相机参数和点参数的数量，以及残差块的数量
   cout << "parameter_camera_vector_length: " << parameter_camera_vector_length << endl;
   cout << "parameter_point_vector_length: " << parameter_point_vector_length << endl;
   cout << "residual_node_length: " << residual_node_length << endl;
 
+  // 对于每一个残差块（观测点）
   for (int i = 0; i < residual_node_length; ++i)
   {
+    // 计算残差块的雅可比矩阵和残差
     residual_block_vector[i]->residual_node->computeJacobiandResidual(
-        &parameter_camera_vector[residual_block_vector[i]->camera_index]->params,
-        &parameter_point_vector[residual_block_vector[i]->point_index]->params,
-        &residual_block_vector[i]->jacobi_parameter_1,
-        &residual_block_vector[i]->jacobi_parameter_2, 
-        &residual_block_vector[i]->residual);
+        &parameter_camera_vector[residual_block_vector[i]->camera_index]->params, // 相机参数，内参外参
+        &parameter_point_vector[residual_block_vector[i]->point_index]->params, // 3D点参数
+        &residual_block_vector[i]->jacobi_parameter_camera, // 相机内外参数的雅可比矩阵
+        &residual_block_vector[i]->jacobi_parameter_point,  // 3D点参数的雅可比矩阵
+        &residual_block_vector[i]->residual); // 残差，重投影误差
+
+
     residual_cost = residual_cost + residual_block_vector[i]->residual.squaredNorm(); //  L2 范数的平方,即平方和
     parameter_camera_vector[residual_block_vector[i]->camera_index]->jacobi_scaling +=
-        residual_block_vector[i]->jacobi_parameter_1.colwise().squaredNorm(); // 求每一列的平方和
+        residual_block_vector[i]->jacobi_parameter_camera.colwise().squaredNorm(); // 求每一列的平方和
     parameter_point_vector[residual_block_vector[i]->point_index]->jacobi_scaling +=
-        residual_block_vector[i]->jacobi_parameter_2.colwise().squaredNorm();
+        residual_block_vector[i]->jacobi_parameter_point.colwise().squaredNorm();
   }
   residual_cost /= 2;
   pre_process();
@@ -407,17 +413,17 @@ void Problem<N, N1, N2>::solve()
              it = residual_block_vector.begin();
          it != residual_block_vector.end(); ++it)
     {
-      (*it)->jacobi_parameter_1 = (*it)->jacobi_parameter_1.array().rowwise() *
+      (*it)->jacobi_parameter_camera = (*it)->jacobi_parameter_camera.array().rowwise() *
                                   parameter_camera_vector[(*it)->camera_index]
                                       ->jacobi_scaling.transpose()
                                       .array();
-      (*it)->jacobi_parameter_2 = (*it)->jacobi_parameter_2.array().rowwise() *
+      (*it)->jacobi_parameter_point = (*it)->jacobi_parameter_point.array().rowwise() *
                                   parameter_point_vector[(*it)->point_index]
                                       ->jacobi_scaling.transpose()
                                       .array();
       (*it)->hessian_W.noalias() =
-          (*it)->jacobi_parameter_1.transpose().lazyProduct(
-              (*it)->jacobi_parameter_2);
+          (*it)->jacobi_parameter_camera.transpose().lazyProduct(
+              (*it)->jacobi_parameter_point);
     }
     ++outcount;
     double totaltime = (double)(clock() - t1) / CLOCKS_PER_SEC;
@@ -469,20 +475,29 @@ void Problem<N, N1, N2>::solve()
                residual_block_vector.begin();
            it != residual_block_vector.end(); ++it)
       {
-        int id_a = (*it)->camera_index;
-        int id_b = (*it)->point_index;
-        Schur_A.block<N1, N1>(id_a * N1, id_a * N1).noalias() +=
-            (*it)->jacobi_parameter_1.transpose().lazyProduct(
-                (*it)->jacobi_parameter_1);
-        Schur_B.segment<N1>(id_a * N1).noalias() -=
-            (*it)->jacobi_parameter_1.transpose().lazyProduct((*it)->residual);
-        parameter_point_vector[id_b]->hessian.noalias() +=
-            (*it)->jacobi_parameter_2.transpose().lazyProduct(
-                (*it)->jacobi_parameter_2);
-        parameter_point_vector[id_b]->residual.noalias() -=
-            (*it)->jacobi_parameter_2.transpose().lazyProduct((*it)->residual);
-      }
+        int id_camera = (*it)->camera_index;
+        int id_point = (*it)->point_index;
 
+        // 矩阵S的每一个对角块 = JcT * Jc
+        Schur_A.block<N1, N1>(id_camera * N1, id_camera * N1).noalias() +=
+            (*it)->jacobi_parameter_camera.transpose().lazyProduct(
+                (*it)->jacobi_parameter_camera);
+
+        // 向量r的第一项：JcT * e (e 为残差）
+        Schur_B.segment<N1>(id_camera * N1).noalias() -=
+            (*it)->jacobi_parameter_camera.transpose().lazyProduct((*it)->residual);
+
+        // 矩阵U = JpT * Jp
+        parameter_point_vector[id_point]->hessian.noalias() +=
+            (*it)->jacobi_parameter_point.transpose().lazyProduct(
+                (*it)->jacobi_parameter_point);
+
+        // 向量r的第二项的后部：JpT * e
+        parameter_point_vector[id_point]->residual.noalias() -=
+            (*it)->jacobi_parameter_point.transpose().lazyProduct((*it)->residual);
+      } // 内循环结束
+
+      // 更新 Schur_A 的对角块，即加上 DTD 矩阵
       Schur_A.diagonal().noalias() += 1 / Miu * Schur_A.diagonal();
 
       for (int i = 0; i < parameter_point_vector_length; ++i)
@@ -520,9 +535,9 @@ void Problem<N, N1, N2>::solve()
         Eigen::Matrix<double, N, 1> delta_parameter;
         int id_1 = (*it)->camera_index;
         int id_2 = (*it)->point_index;
-        delta_parameter = (*it)->jacobi_parameter_1.lazyProduct(
+        delta_parameter = (*it)->jacobi_parameter_camera.lazyProduct(
                               parameter_camera_vector[id_1]->delta) +
-                          (*it)->jacobi_parameter_2.lazyProduct(
+                          (*it)->jacobi_parameter_point.lazyProduct(
                               parameter_point_vector[id_2]->delta);
         model_cost += (delta_parameter.transpose() *
                        (2 * (*it)->residual + delta_parameter))(0, 0);
@@ -600,7 +615,7 @@ void Problem<N, N1, N2>::solve()
       (*it)->residual_node->computeJacobiandResidual(
           &parameter_camera_vector[(*it)->camera_index]->params,
           &parameter_point_vector[(*it)->point_index]->params,
-          &(*it)->jacobi_parameter_1, &(*it)->jacobi_parameter_2,
+          &(*it)->jacobi_parameter_camera, &(*it)->jacobi_parameter_point,
           &(*it)->residual);
     }
     printf("%4s(%d)", std::to_string(outcount).c_str(), innercount);

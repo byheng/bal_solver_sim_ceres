@@ -33,8 +33,8 @@ class CostFunction {
   virtual void computeJacobiandResidual(
       const Eigen::Matrix<double, N1, 1> *params_1,
       const Eigen::Matrix<double, N2, 1> *params_2,
-      Eigen::Matrix<double, N, N1> *jacobi_parameter_1,
-      Eigen::Matrix<double, N, N2> *jacobi_parameter_2,
+      Eigen::Matrix<double, N, N1> *jacobi_parameter_camera,
+      Eigen::Matrix<double, N, N2> *jacobi_parameter_point,
       Eigen::Matrix<double, N, 1> *jacobi_residual) = 0;
   virtual void computeResidual(const Eigen::Matrix<double, N1, 1> *params_1,
                                const Eigen::Matrix<double, N2, 1> *params_2,
@@ -65,8 +65,8 @@ class Residual_node : public CostFunction<N, N1, N2> {
   void computeJacobiandResidual(
       const Eigen::Matrix<double, N1, 1> *params_1,
       const Eigen::Matrix<double, N2, 1> *params_2,
-      Eigen::Matrix<double, N, N1> *jacobi_parameter_1,
-      Eigen::Matrix<double, N, N2> *jacobi_parameter_2,
+      Eigen::Matrix<double, N, N1> *jacobi_parameter_camera,
+      Eigen::Matrix<double, N, N2> *jacobi_parameter_point,
       Eigen::Matrix<double, N, 1> *jacobi_residual);
   // compute only residual both,it happen in the predict stage.
   void computeResidual(const Eigen::Matrix<double, N1, 1> *params_1,
@@ -81,13 +81,13 @@ template <class T, int N, int N1, int N2>
 Residual_node<T, N, N1, N2>::Residual_node(T *costfunction)
     : costfunction_(costfunction) {}
 
-    /******************compute jacobi*************************/
+/******************compute jacobi*************************/
 template <class T, int N, int N1, int N2>
 void Residual_node<T, N, N1, N2>::computeJacobiandResidual(
     const Eigen::Matrix<double, N1, 1> *params_1, // 相机参数
     const Eigen::Matrix<double, N2, 1> *params_2, // 点参数
-    Eigen::Matrix<double, N, N1> *jacobi_parameter_1,
-    Eigen::Matrix<double, N, N2> *jacobi_parameter_2,
+    Eigen::Matrix<double, N, N1> *jacobi_parameter_camera, // 相机参数的雅可比矩阵
+    Eigen::Matrix<double, N, N2> *jacobi_parameter_point, // 点参数的雅可比矩阵
     Eigen::Matrix<double, N, 1> *jacobi_residual) { // 残差
 
   // 创建相机参数和点参数的 jet 对象
@@ -125,16 +125,18 @@ void Residual_node<T, N, N1, N2>::computeJacobiandResidual(
   //   residual[i].printjet(ss.str());
   // }
 
-
+  // 获取残差值
   for (int i = 0; i < N; i++) {
     (*jacobi_residual)(i, 0) = residual[i].a;
   }
+
+  // 获取相机参数和点参数的雅可比矩阵
   for (int i = 0; i < N; i++) {
-    (*jacobi_parameter_1).row(i) = residual[i].v.head(N1);
-    (*jacobi_parameter_2).row(i) = residual[i].v.tail(N2);
+    (*jacobi_parameter_camera).row(i) = residual[i].v.head(N1); // 获取前 N1 个元素，即相机参数的雅可比矩阵
+    (*jacobi_parameter_point).row(i) = residual[i].v.tail(N2); // 获取后 N2 个元素，即点参数的雅可比矩阵
   }
-  // std::cout << "jacobi_parameter_1: \n" << *jacobi_parameter_1 << std::endl;
-  // std::cout << "jacobi_parameter_2: \n" << *jacobi_parameter_2 << std::endl;
+  // std::cout << "jacobi_parameter_camera: \n" << *jacobi_parameter_camera << std::endl;
+  // std::cout << "jacobi_parameter_point: \n" << *jacobi_parameter_point << std::endl;
   // std::cout << "jacobi_residual: \n" << *jacobi_residual << std::endl;
   delete (residual);
   return;

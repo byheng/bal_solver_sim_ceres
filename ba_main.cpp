@@ -22,6 +22,7 @@ class costfunction {
   template <class T>
   void Evaluate(const T* camera, const T* point, T* residual) {
 
+    // --1. 求解3D点在相机坐标系下的坐标
     // 根据相机参数camera旋转点point，结果保存在result中
     // 将 point 旋转到相机坐标系下
     T result[3];
@@ -33,19 +34,19 @@ class costfunction {
     result[1] = result[1] + camera[4];
     result[2] = result[2] + camera[5];
 
-    // 归一化
+    // --2. 归一化
     T xp = -result[0] / result[2];
     T yp = -result[1] / result[2];
 
-    // 畸变模型
+    // --3. 畸变模型
     T r2 = xp * xp + yp * yp;
     T distortion = 1.0 + r2 * (camera[7] + camera[8] * r2);
 
-    // 计算预测的像素坐标
+    // --4. 计算预测的像素坐标
     T predicted_x = camera[6] * distortion * xp;
     T predicted_y = camera[6] * distortion * yp;
 
-    // 计算残差=预测值-观测值
+    // --5. 计算残差=预测值-观测值
     residual[0] = predicted_x - x_;
     residual[1] = predicted_y - y_;
   }
