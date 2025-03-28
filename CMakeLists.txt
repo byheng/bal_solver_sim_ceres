@@ -2,11 +2,13 @@ cmake_minimum_required(VERSION 3.10)
 
 project(bal_solver_sim_ceres)
 
-set(CMAKE_BUILD_TYPE "Debug")
+set(CMAKE_BUILD_TYPE "Release")
 
 include_directories("./eigen3")
 
-set(CMAKE_CXX_FLAGS "-std=c++11")
+# set(CMAKE_CXX_FLAGS "-std=c++11")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(OpenCV REQUIRED)
 find_package(Ceres REQUIRED)
 
@@ -21,4 +23,4 @@ add_executable(ba_pnp_ceres ba_pnp_ceres.cpp)
 target_link_libraries(bound_adjustment_ceres ${CERES_LIBRARIES})
 target_link_libraries(BoundleAdjustmentByNode_accelebrate ${CERES_LIBRARIES})
 target_link_libraries(ba_pnp ${CERES_LIBRARIES})
-target_link_libraries(ba_pnp_ceres ${CERES_LIBRARIES})
+target_link_libraries(ba_pnp_ceres ${CERES_LIBRARIES} stdc++fs)

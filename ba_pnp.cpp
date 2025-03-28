@@ -65,7 +65,7 @@ int main(int argc, char const *argv[])
     problem.addParameterBlock(camera_rvec, camera_t, residual_node);
   }
   problem.solve();
-  std::cout << "////////////////////////////////\n";
+  std::cout << "////////////////////////////////\nt = ";
   for (auto &t : camera_t)
   {
     std::cout << t << "\t";
