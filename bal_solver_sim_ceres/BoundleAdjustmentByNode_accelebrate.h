@@ -298,7 +298,7 @@ void Problem<N, N1, N2>::addParameterBlock(
 /***************schur complement*************
  * 在该函数中完成 S 矩阵和 r 向量的计算
  * 通过柯西分解求解得到相机参数的增量 deltaPc
- * /
+ */
 template <int N, int N1, int N2>
 void Problem<N, N1, N2>::schur_complement()
 {
