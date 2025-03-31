@@ -51,12 +51,6 @@ class costfunction {
     residual[0] = predicted_x - x_;
     residual[1] = predicted_y - y_;
   }
-
-  // 计算向量x和y的点积
-  template <typename T>
-  inline T DotProduct(const T x[3], const T y[3]) {
-    return (x[0] * y[0] + x[1] * y[1] + x[2] * y[2]);
-  }
 };
 
 /*------数据集格式------
