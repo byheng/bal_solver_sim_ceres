@@ -72,7 +72,7 @@ struct Points
 int main(int argc, char** argv)
 {
   
-  string filename = "/home/weihao/bal_solver/dataset/problem-16-22106-pre.txt";
+  string filename = "../data/problem-16-22106-pre.txt";
   ifstream infile;
   int cn, pn, obn;
 

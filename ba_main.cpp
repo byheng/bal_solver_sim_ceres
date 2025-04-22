@@ -72,7 +72,7 @@ class costfunction {
 [point parameter] # 第point number组点参数:3
 */
 int main() {
-  // string filename = "../data/test.txt";
+  // string filename = "../data/test1.txt";
   string filename = "../data/problem-16-22106-pre.txt";
   ifstream infile;
   int cn, pn, obn;  // number of camera, point, observation
