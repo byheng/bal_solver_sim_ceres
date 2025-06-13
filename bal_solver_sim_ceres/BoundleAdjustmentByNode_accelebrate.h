@@ -109,11 +109,11 @@ class Problem
   };
 
   vector<Residual_block *> residual_block_vector; // 残差块，与观测值数量相等
-  vector<Parameter<N1> *> parameter_camera_vector; // 相机参数
-  vector<Parameter<N2> *> parameter_point_vector; // 点参数
-  map<double *, int> parameter_camera_map;
-  map<double *, int> parameter_point_map;
-  int parameter_a_size;
+  vector<Parameter<N1> *> parameter_camera_vector; // 相机参数，size为相机数
+  vector<Parameter<N2> *> parameter_point_vector; // 点参数，size为3D点数
+  map<double *, int> parameter_camera_map; // 相机参数的映射，key 为相机参数的指针，value 为相机参数在 parameter_camera_vector 中的索引
+  map<double *, int> parameter_point_map; // 点参数的映射，key 为点参数的指针，value 为点参数在 parameter_point_vector 中的索引
+  int parameter_camera_size; // 相机参数的总大小，即所有相机参数的维度之和 = 相机数 * N1
   Eigen::MatrixXd Schur_A; // 柯西分解中的 S 矩阵，大小为：相机参数数 * 相机参数数
   Eigen::VectorXd Schur_B; // 柯西分解中的 r 向量，大小为：相机参数数 = 相机数 * N1，在 schur_complement 中该变量保存得到的相机增量 deltaPc
   bool update_parameter(double *step);
@@ -137,7 +137,7 @@ class Problem
 };
 
 template <int N, int N1, int N2>
-Problem<N, N1, N2>::Problem() : parameter_a_size(0)
+Problem<N, N1, N2>::Problem() : parameter_camera_size(0)
 {
 }
 template <int N, int N1, int N2>
@@ -185,8 +185,8 @@ void Problem<N, N1, N2>::pre_process()
    * link_list by camera id. Compute with the link happened in the function
    * schur_complement().
    */
-  Schur_A.resize(parameter_a_size, parameter_a_size); // 初始化 Schur_A　为方阵
-  Schur_B.resize(parameter_a_size); // 初始化 Schur_B 为列向量
+  Schur_A.resize(parameter_camera_size, parameter_camera_size); // 初始化 Schur_A　为方阵
+  Schur_B.resize(parameter_camera_size); // 初始化 Schur_B 为列向量
   Schur_A.setZero();
   Schur_B.setZero();
 
@@ -256,7 +256,7 @@ void Problem<N, N1, N2>::addParameterBlock(
     new_parameter->params =
         Eigen::Map<Eigen::Matrix<double, N1, 1>>(parameter_camera, N1);
 
-    // 插入参数及其对应的索引
+    // 插入参数指针及其对应的索引
     parameter_camera_map.insert(
         std::pair<double *, int>(parameter_camera, parameter_camera_vector.size()));
 
@@ -264,7 +264,7 @@ void Problem<N, N1, N2>::addParameterBlock(
     parameter_camera_vector.push_back(new_parameter);
 
     // 更新参数向量的大小
-    parameter_a_size = parameter_a_size + N1;
+    parameter_camera_size = parameter_camera_size + N1;
   }
 
   if (!checkParameter_point(parameter_point))
@@ -273,7 +273,7 @@ void Problem<N, N1, N2>::addParameterBlock(
     new_parameter->params =
         Eigen::Map<Eigen::Matrix<double, N2, 1>>(parameter_point, N2);
 
-    // 插入参数及其对应的索引
+    // 插入参数指针及其对应的索引
     parameter_point_map.insert(
         std::pair<double *, int>(parameter_point, parameter_point_vector.size()));
 
